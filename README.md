@@ -1,8 +1,18 @@
 # MacCleaner
 
-`MacCleaner` includes both a native Swift command-line tool and a very simple macOS SwiftUI app for reclaiming space from safe-to-delete user data.
+`MacCleaner` is an opinionated macOS cleanup tool for personal use.
 
-It intentionally avoids system-critical locations and focuses on user-owned cache and developer artifacts:
+It focuses on reclaimable user-space clutter that tends to grow on a developer machine: caches, logs, Xcode leftovers, simulator data, Finder device backups, and stale build artifacts under `~/Desktop`.
+
+The project includes:
+
+- a Swift CLI for scanning and cleanup
+- a simple SwiftUI macOS app
+- a packaging script that builds `.app`, `.zip`, `.pkg`, and `.dmg` artifacts
+
+## What It Cleans
+
+`MacCleaner` targets these categories:
 
 - `~/Library/Caches`
 - `~/Library/Logs`
@@ -11,9 +21,20 @@ It intentionally avoids system-critical locations and focuses on user-owned cach
 - `~/Library/Developer/CoreSimulator/Caches`
 - `~/Library/Developer/CoreSimulator/Devices/*/data` via `simctl erase`
 - `~/Library/Containers/com.apple.mail/Data/Library/Mail Downloads` (requires Full Disk Access)
-- `~/Desktop` old dev build caches such as `target`, `.svelte-kit`, `.next`, `.nuxt`, `dist`, and `build` that have been stale for 30+ days
-- `~/Library/Application Support/MobileSync/Backup` (requires Full Disk Access, individual backup deletion in the UI)
+- stale dev build caches under `~/Desktop` such as `target`, `.svelte-kit`, `.next`, `.nuxt`, `dist`, and `build` that have not been touched for 30+ days
+- `~/Library/Application Support/MobileSync/Backup` as itemized Finder backups in the app (requires Full Disk Access)
 - `~/.Trash`
+
+## Privacy
+
+This repository is intended to stay safe to publish:
+
+- generated build output is excluded from git
+- packaging artifacts in `dist/` are excluded from git
+- the code and README avoid machine-specific absolute user paths
+- Finder backups are only scanned locally on your Mac and are not copied into the repository
+
+If you customize cleanup rules for your own folders, review those changes before pushing them to GitHub.
 
 ## Build
 
@@ -21,33 +42,50 @@ It intentionally avoids system-critical locations and focuses on user-owned cach
 swift build
 ```
 
-The executables will be available at:
+Debug binaries:
 
 ```bash
 .build/debug/MacCleaner
 .build/debug/MacCleanerUI
 ```
 
-## Run The App
+## Run
 
-Launch the simple macOS UI:
+CLI:
+
+```bash
+swift run MacCleaner
+swift run MacCleaner list
+swift run MacCleaner scan desktop-dev-caches
+swift run MacCleaner clean simulator-devices --force
+```
+
+App:
 
 ```bash
 swift run MacCleanerUI
 ```
 
-The UI can:
+The app can:
 
 - scan supported cleanup categories
-- show estimated reclaimable space per category
-- let you select categories with checkboxes
-- clean only the selected categories
-- highlight categories that require Full Disk Access or need itemized cleanup
-- show Finder device backups individually so you can delete only the backups you choose
+- show reclaimable space by category
+- clean selected categories
+- show Finder backups individually and delete only the ones you choose
+- show stale Desktop dev caches that match the 30-day rule
 
-## Package For Another Mac
+## Full Disk Access
 
-Create a universal app bundle plus `zip`, `pkg`, and `dmg` artifacts:
+Some categories are protected by macOS privacy controls:
+
+- `mail-downloads`
+- `mobile-backups`
+
+If those scans fail with permission warnings, grant Full Disk Access to the app or to the terminal app you are using.
+
+## Packaging
+
+Build a universal app bundle and distributable archives:
 
 ```bash
 ./scripts/package_release.sh
@@ -62,13 +100,13 @@ dist/MacCleaner.pkg
 dist/MacCleaner.dmg
 ```
 
-You can override metadata at packaging time:
+Override bundle metadata when needed:
 
 ```bash
 BUNDLE_ID="com.yourcompany.MacCleaner" VERSION="1.0.0" BUILD_NUMBER="1" ./scripts/package_release.sh
 ```
 
-To sign the distributables:
+To sign distributables:
 
 ```bash
 CODESIGN_IDENTITY="Developer ID Application: Your Name" \
@@ -76,65 +114,14 @@ INSTALLER_SIGN_IDENTITY="Developer ID Installer: Your Name" \
 ./scripts/package_release.sh
 ```
 
-By default the script uses ad-hoc signing. Gatekeeper will reject those artifacts on another Mac unless the user manually bypasses the warning. For normal distribution, use Developer ID signing and notarize the result.
+By default the packaging script uses ad-hoc signing. That is fine for local testing, but Gatekeeper will reject those artifacts on another Mac unless the user manually bypasses the warning. For normal distribution, use Developer ID signing and notarize the app or installer.
 
-## Usage
+## Safety Notes
 
-Scan everything:
-
-```bash
-swift run MacCleaner
-```
-
-Scan only specific categories:
-
-```bash
-swift run MacCleaner scan caches logs
-```
-
-Scan protected categories:
-
-```bash
-swift run MacCleaner scan mail-downloads mobile-backups
-```
-
-Scan stale Desktop dev caches:
-
-```bash
-swift run MacCleaner scan desktop-dev-caches
-```
-
-Get JSON output:
-
-```bash
-swift run MacCleaner scan all --json
-```
-
-Preview and clean everything:
-
-```bash
-swift run MacCleaner clean all
-```
-
-Skip the confirmation prompt:
-
-```bash
-swift run MacCleaner clean simulator-devices xcode-derived-data --force
-```
-
-List supported categories:
-
-```bash
-swift run MacCleaner list
-```
-
-## Safety notes
-
-- The tool only deletes the contents inside the supported directories, not the root directories themselves.
-- `Simulator Devices` uses `xcrun simctl erase` to reset simulator app data while keeping the simulator definitions.
-- `Mail Downloads` and `Device Backups` usually require Full Disk Access to inspect.
-- `Device Backups` stays itemized. The app lists backup folders individually instead of deleting the entire backup root in one click.
-- `Old Dev Caches (Desktop)` only targets stale build artifacts older than 30 days and skips `node_modules` package payloads. Cleaning them is safe, but the next build of those projects will be slower.
 - Cleanup is opt-in. The default action is `scan`, not `clean`.
-- The estimated reclaimed size is based on the pre-clean scan.
-- Some directories can still fail with permission errors depending on local macOS privacy settings.
+- Root directories are preserved where possible; cleanup usually removes contents, not the container directory itself.
+- `Simulator Devices` resets simulator app data while keeping simulator definitions.
+- Finder backups are itemized in the app instead of being deleted wholesale.
+- `Old Dev Caches (Desktop)` only targets stale build artifacts and skips package payloads inside `node_modules` except `node_modules/.cache`.
+- Cleaning build artifacts is safe, but the next build of those projects will be slower.
+- Estimated reclaimed size is based on the pre-clean scan.
